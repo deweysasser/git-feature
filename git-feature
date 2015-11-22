@@ -226,18 +226,21 @@ def done():
     branch=git.config("feature.branch", "master")
 
     git.checkout(branch)
-    
+
 @command
-def pending():
+def status():
+    '''show status of all features'''
     ''' Show all feature branches that might require work'''
     masterbranch =git.config("feature.branch", "master")
     mastercommit = git.commitFor(masterbranch)
 
     results = dict()
-    def add(b, m):
+    def add(b, msg):
+        m = re.match("^(wip|ready)/(.*)", b)
+        b = m.group(2)
         if b not in results:
             results[b] = []
-        results[b].append(m)
+        results[b].append(msg)
 
     cur = git.currentBranch()
 
@@ -246,7 +249,60 @@ def pending():
 
     unmerged = filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged"))
     for b in unmerged:
-        add(b, "unmerged")
+        add(b, "not in current branch")
+
+    branches = git.branches()
+
+    wip = filter(lambda x: re.match("^wip/",x), branches)
+    ready = filter(lambda x: re.match("^ready/",x), branches)
+
+    branches = git.branches()
+    for branch in wip:
+        target = re.sub("^wip/", "ready/", branch)
+        if target in branches:
+            changes = git.changes(branch, target)
+            if len(changes) > 0:
+                add(branch, "{} change(s) in progress".format(len(changes)))
+        else:
+            changes=git.changes(branch, masterbranch)
+            if len(changes) > 0:
+                add(branch, "no ready branch. {} change(s) in progress".format(len(changes)))
+            else:
+                add(branch, "not started")
+
+    for branch in ready:
+        changes = git.changes(branch, masterbranch)
+        if changes:
+            add(branch, "{} change(s) pending merge to {}".format(len(changes), masterbranch))
+        else:
+            add(branch, "integrated")
+
+
+    for k in sorted(results):
+        print "{}: {}".format(k, ", ".join(results[k]))
+    
+@command
+def pending():
+    ''' Show all feature branches that might require work'''
+    masterbranch =git.config("feature.branch", "master")
+    mastercommit = git.commitFor(masterbranch)
+
+    results = dict()
+    def add(b, msg):
+        m = re.match("^(wip|ready)/(.*)", b)
+        b = m.group(2)
+        if b not in results:
+            results[b] = []
+        results[b].append(msg)
+
+    cur = git.currentBranch()
+
+    if re.match("^(wip|ready)/",cur) and git.hasChanges():
+        print "uncommitted changes on current branch " + cur
+
+    unmerged = filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged"))
+    for b in unmerged:
+        add(b, "not in current branch")
 
     branches = git.branches()
 
@@ -272,7 +328,7 @@ def pending():
 
 
     for k in sorted(results):
-        print "{}: {}".format(k, " ".join(results[k]))
+        print "{}: {}".format(k, ", ".join(results[k]))
         
 @command
 def info():
