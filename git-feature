@@ -26,6 +26,8 @@ def error(message):
     print message
     sys.exit(1)
 
+
+
 ######################################################################
 # Process utilities
 
@@ -54,6 +56,9 @@ def linesFrom(cmd):
     lines = []
     with Pipe(cmd) as p:
         return map(lambda x: x.rstrip(), p.readlines())
+
+def cutlines(col,cmd):
+    return map(lambda x: x[col:], linesFrom(cmd))
 
 def oneline(cmd):
     with Pipe(cmd) as p:
@@ -278,12 +283,12 @@ def info():
 @command
 def unmerged():
     ''' Show all feature branches that have not yet been merged to the current branch'''
-    print "\n".join(filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged")))
+    print "\n".join(filter(lambda x: "ready/" in x, cutlines(2, "git branch --no-merged")))
 
 @command
 def merged():
     ''' Show all feature branches that a READY and *have* been merged '''
-    print "\n".join(filter(lambda x: "ready/" in x, linesFrom("git branch --merged")))
+    print "\n".join(filter(lambda x: "ready/" in x, cutlines(2, "git branch --merged")))
 
 @command
 def wip():
