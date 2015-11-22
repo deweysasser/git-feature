@@ -196,6 +196,27 @@ def rebase():
         git.rebase("-i", base)
 
 @command
+def log():
+    '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
+    current = git.currentBranch()
+    ready= re.sub("^wip/", "ready/", current)
+    wip = re.sub("ready/", "^wip/", current)
+    rchanges = git.changes(ready, git.config("feature.target", "master"))
+    wchanges = git.changes(wip, ready)
+
+    if len(rchanges) > 0:
+        print "Ready:"
+        print "  * " + "\n  * ".join(rchanges)
+
+    if len(wchanges) > 0:
+        print "In progress:"
+        print "  * " + "\n  * ".join(wchanges)
+
+    if len(wchanges) == 0 and len (rchanges) == 0:
+        print "no pending changes"
+
+
+@command
 def ready():
     '''Merge changes from the current WIP feature branch to a READY feature branch'''
     branch = git.currentBranch()
