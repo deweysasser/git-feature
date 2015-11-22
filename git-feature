@@ -214,6 +214,8 @@ def done():
 @command
 def pending():
     ''' Show all feature branches that might require work'''
+    masterbranch =git.config("feature.branch", "master")
+
     results = dict()
     def add(b, m):
         if b not in results:
@@ -237,10 +239,16 @@ def pending():
     branches = git.branches()
     for branch in filter(lambda x: "wip/" in x, git.branches()):
         target = re.sub("^wip/", "ready/", branch)
-        base = git.mergeBase(branch, target)
-        changes = linesFrom("git log --oneline {}..{}".format(base, branch))
-        if len(changes) > 0:
-            add(branch, "{} change(s) not ready".format(len(changes)))
+        if target in branches:
+            base = git.mergeBase(branch, target)
+            changes = linesFrom("git log --oneline {}..{}".format(base, branch))
+            if len(changes) > 0:
+                add(branch, "{} change(s) not ready".format(len(changes)))
+        else:
+            base = git.mergeBase(branch, masterbranch)
+            changes = linesFrom("git log --oneline {}..{}".format(base, branch))
+            if len(changes) > 0:
+                add(branch, "no ready branch.  {} change(s) in progress".format(len(changes)))
 
     for k in sorted(results):
         print "{}: {}".format(k, " ".join(results[k]))

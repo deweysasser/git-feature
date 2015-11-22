@@ -32,3 +32,14 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
+
+
+## Bugs
+
+Please create issue reports at https://github.com/deweysasser/git-feature
+
+## TODO
+
+* add "-f" flag to ready to force update instead of merge
+* add "rebase" to make it convenient to locate the integration branch
+* add reasonable default behavior for "git feature" with no args -- list or pending?
