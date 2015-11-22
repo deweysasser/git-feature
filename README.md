@@ -20,7 +20,7 @@ Another git feature branch manager
         push                Push the WIP feature branch to the 'mine' remote (or
                             the feature.fork config setting)
         list                Show all feature branches, WIP or READY
-        done                Check out the 'master' branch (or feature.branch
+        done                Check out the 'master' branch (or feature.target
                             branch)
         status              show status of all features
         pending             Show all feature branches that might require work
@@ -34,6 +34,7 @@ Another git feature branch manager
     
     optional arguments:
       -h, --help            show this help message and exit
+
 
 ## Bugs
 
