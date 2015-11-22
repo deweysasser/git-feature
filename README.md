@@ -5,16 +5,18 @@ Another git feature branch manager
 ## commands
 
     usage: git-feature [-h]
-                       {start,ready,publish,push,list,done,status,pending,info,unmerged,merged,wip}
+                       {start,ready,merge,publish,push,list,done,status,pending,info,unmerged,merged,wip}
                        ...
     
     Implement git feature branches
     
     positional arguments:
-      {start,ready,publish,push,list,done,status,pending,info,unmerged,merged,wip}
+      {start,ready,merge,publish,push,list,done,status,pending,info,unmerged,merged,wip}
         start               Start a feature called NAME
         ready               Merge changes from the current WIP feature branch to a
                             READY feature branch
+        merge               Merge the ready commits of the current feature to the
+                            integration branch
         publish             Push the READY feature branch to the 'origin' remote
                             (or the feature.origin config setting)
         push                Push the WIP feature branch to the 'mine' remote (or

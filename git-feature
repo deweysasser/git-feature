@@ -150,6 +150,20 @@ class stashed(object):
             run("git stash pop")
 
 
+class Checkout(object):
+    def __init__(self, branch):
+        self.saved = None
+        self.branch = branch
+
+    def __enter__(self):
+        self.saved = git.currentBranch()
+        git.checkout(self.branch)
+
+    def __exit__(self, type, value, tb):
+        if type is not None:
+            git.merge("--abort")
+        git.checkout(self.saved)
+
 ######################################################################
 # git feature commands
 
@@ -182,11 +196,24 @@ def ready():
 
     if target in bs:
         with stashed():
-            git.checkout(target)
-            git.merge(branch)
-            git.checkout(branch)
+            with Checkout(target):
+                git.merge(branch)
     else:
         git.branch(target, branch)
+
+@command
+def merge(name):
+    '''Merge the ready commits of the current feature to the integration branch'''
+    master = git.config("feature.target", "master")
+    if re.match("wip/", name):
+        name = re.sup("^wip/", "ready/", name)
+    elif not re.match("ready/^", name):
+        name = "ready/" + name
+
+    with stashed():
+        with Checkout(master):
+            git.merge("--no-ff", name)
+            
 
 @command
 def publish():
@@ -332,7 +359,7 @@ def pending():
         
 @command
 def info():
-    print "integration branch is {}".format(git.config("feature.target", "origin"))
+    print "integration branch is {}".format(git.config("feature.target", "master"))
     print "publish ready features to {}".format(git.config("feature.origin", "origin"))
     print "push work in progress to {}".format(git.config("feature.fork", "mine"))
 
