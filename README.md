@@ -51,4 +51,5 @@ Please create issue reports at https://github.com/deweysasser/git-feature
 * add "rebase" to make it convenient to locate the integration branch
 * add reasonable default behavior for "git feature" with no args -- list or pending?
 * add optional arguments for e.g. starting branch on 'start' command
-
+* add optional commit argument to "ready" that allows ready through that commit.  Check it for viability.
+* add push --all,  merge --all, publish --all
