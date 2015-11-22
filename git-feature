@@ -55,6 +55,10 @@ def linesFrom(cmd):
     with Pipe(cmd) as p:
         return map(lambda x: x.rstrip(), p.readlines())
 
+def oneline(cmd):
+    with Pipe(cmd) as p:
+        return p.readline().rstrip()
+
 
 class Git(object):
     def __init__(self):
@@ -67,15 +71,22 @@ class Git(object):
         return command
 
     def currentBranch(self):
-        with Pipe("git symbolic-ref HEAD") as p:
-            return re.sub("^refs/heads/", "", p.readline().rstrip())
+        return re.sub("^refs/heads/", "", oneline("git symbolic-ref HEAD"))
+
+    def commitFor(self, branch):
+        return oneline("git rev-parse {}".format(branch))
 
     def mergeBase(self, b1, b2):
-        with Pipe("git merge-base {} {}".format(b1, b2)) as p:
-            return p.readline().rstrip()
+        return oneline("git merge-base {} {}".format(b1, b2))
     
     def branches(self):
         return map(lambda x: x[2:], linesFrom("git branch"))
+
+    def changes(self, b1, b2):
+        base = self.mergeBase(b1, b2)
+        if base == self.commitFor(b1):
+            return []
+        return linesFrom("git log --oneline {}..{}".format(base, b1))
 
     def remotes(self):
         return linesFrom("git remote")
@@ -214,6 +225,9 @@ def done():
 @command
 def pending():
     ''' Show all feature branches that might require work'''
+    masterbranch =git.config("feature.branch", "master")
+    mastercommit = git.commitFor(masterbranch)
+
     results = dict()
     def add(b, m):
         if b not in results:
@@ -235,16 +249,31 @@ def pending():
     ready = filter(lambda x: re.match("^ready/",x), branches)
 
     branches = git.branches()
-    for branch in filter(lambda x: "wip/" in x, git.branches()):
+    for branch in wip:
         target = re.sub("^wip/", "ready/", branch)
-        base = git.mergeBase(branch, target)
-        changes = linesFrom("git log --oneline {}..{}".format(base, branch))
-        if len(changes) > 0:
-            add(branch, "{} change(s) not ready".format(len(changes)))
+        if target in branches:
+            changes = git.changes(branch, target)
+            if len(changes) > 0:
+                add(branch, "{} change(s) in progress".format(len(changes)))
+        else:
+            changes=git.changes(branch, masterbranch)
+            if len(changes) > 0:
+                add(branch, "no ready branch. {} change(s) in progress".format(len(changes)))
+
+    for branch in ready:
+        changes = git.changes(branch, masterbranch)
+        if changes:
+            add(branch, "{} change(s) pending merge to {}".format(len(changes), masterbranch))
+
 
     for k in sorted(results):
         print "{}: {}".format(k, " ".join(results[k]))
         
+@command
+def info():
+    print "integration branch is {}".format(git.config("feature.branch", "origin"))
+    print "publish ready features to {}".format(git.config("feature.origin", "origin"))
+    print "push work in progress to {}".format(git.config("feature.fork", "mine"))
 
 @command
 def unmerged():
