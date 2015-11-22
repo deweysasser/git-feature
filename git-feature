@@ -1,0 +1,301 @@
+#!/usr/bin/python2.7
+
+# Purpose:  
+# git feature start foo -> git checkout -b wip/foo
+# git feature ready -> git branch ready/<featurename> or (git stash save "pub-checkpoint"; git 
+
+
+import argparse
+import subprocess
+import re
+import inspect
+import sys
+
+######################################################################
+# Metaprogramming
+
+Commands=[]
+def command(func):
+    Commands.append(func)
+    return func
+
+
+######################################################################
+# Utilities
+def error(message):
+    print message
+    sys.exit(1)
+
+######################################################################
+# Process utilities
+
+class Pipe(object):
+    def __init__(self, command):
+        self.command = command
+
+    def __enter__(self):
+        self.process = subprocess.Popen(self.command.split(), stdout=subprocess.PIPE)
+        return self.process.stdout
+
+    def __exit__(self, type, value, tb):
+        if self.process.wait() > 0:
+            raise Exception("Error running command {}".format(self.command))
+
+def run(command):
+    print command
+    if subprocess.call(command.split()) > 0:
+        raise Exception("Error running git branch")
+
+
+######################################################################
+# basic GIT commands
+
+def linesFrom(cmd):
+    lines = []
+    with Pipe(cmd) as p:
+        return map(lambda x: x.rstrip(), p.readlines())
+
+
+class Git(object):
+    def __init__(self):
+        self.Config=None
+        pass
+
+    def __getattr__(self, cmd):
+        def command(*args):
+            run("git {} {}".format(cmd, " ".join(args)))
+        return command
+
+    def currentBranch(self):
+        with Pipe("git symbolic-ref HEAD") as p:
+            return re.sub("^refs/heads/", "", p.readline().rstrip())
+
+    def mergeBase(self, b1, b2):
+        with Pipe("git merge-base {} {}".format(b1, b2)) as p:
+            return p.readline().rstrip()
+    
+    def branches(self):
+        return map(lambda x: x[2:], linesFrom("git branch"))
+
+    def remotes(self):
+        return linesFrom("git remote")
+
+    def hasChanges(self, *args):
+        if subprocess.call(("git diff --quiet " + " ".join(args)).split()) == 0:
+            return False
+        else:
+            return True
+
+    def modified(self):
+        files=[]
+        with Pipe("git ls-files --exclude-standard -m") as p:
+            return map(lambda x: x.rsplit(), p.readlines())
+
+
+    def config(self, key, default=None):
+        if self.Config is None:
+            self.Config =dict()
+            p= subprocess.Popen("git config -l".split(), stdout=subprocess.PIPE)
+            for line in p.stdout.readlines():
+                parts=line.rstrip().split("=", 1)
+                self.Config[parts[0]]=parts[1]
+                p.wait()
+	
+        if key in self.Config:
+            return self.Config[key]
+        else:
+            return default
+
+git=Git()
+
+
+######################################################################
+# git informational functions
+
+
+
+
+######################################################################
+# Advanced git operations
+
+class stashed(object):
+    def __init__(self):
+        pass
+
+    def __enter__(self):
+        if len(git.modified())>0:
+            self.stashed=True
+            run("git stash save temp stash")
+        else:
+            self.stashed=False
+
+    def __exit__(self, type, value, tb):
+        if self.stashed:
+            run("git stash pop")
+
+
+######################################################################
+# git feature commands
+
+
+@command
+def start(name):
+    '''Start a feature called NAME'''
+    branch=git.config("feature.branch", "master")
+
+    target = "wip/{}".format(name)
+
+    if git.currentBranch() == target:
+        print "Already on {}".format(target)
+        return
+
+    if target in git.branches():
+        git.checkout(target)
+        with stashed():
+            git.rebase(branch)
+    else:
+        git.checkout("-b", target, branch)
+
+@command
+def ready():
+    '''Merge changes from the current WIP feature branch to a READY feature branch'''
+    branch = git.currentBranch()
+    bs = git.branches()
+
+    target = re.sub("^wip/", "ready/", branch)
+
+    if target in bs:
+        with stashed():
+            git.checkout(target)
+            git.merge(branch)
+            git.checkout(branch)
+    else:
+        git.branch(target, branch)
+
+@command
+def publish():
+    '''Push the READY feature branch to the 'origin' remote (or the feature.origin config setting)'''
+    branch = git.currentBranch()
+
+    remote = git.config("feature.origin", "origin")
+    target = re.sub("^wip/", "ready/", branch)
+
+    if remote in git.remotes():
+        git.push(remote, target)
+    else:
+        error("feature.origin not set to valid remote and remote 'origin' not found")
+
+@command
+def push():
+    '''Push the WIP feature branch to the 'mine' remote (or the feature.fork config setting)'''
+    branch = git.currentBranch()
+
+    remote = git.config("feature.fork", "mine")
+    target = re.sub("^ready/", "wip/", branch)
+
+    if remote in git.remotes():
+        git.push("-f", remote, target)
+    else:
+        error("feature.fork not set to valid remote and remote 'mine' not found")
+
+@command
+def list():
+    '''Show all feature branches, WIP or READY'''
+    bs = filter(lambda x: "wip/" in x or "ready/" in x, git.branches())
+    print "\n".join(bs)
+
+@command
+def done():
+    '''Check out the 'master' branch (or feature.branch branch)'''
+    branch=git.config("feature.branch", "master")
+
+    git.checkout(branch)
+    
+@command
+def pending():
+    ''' Show all feature branches that might require work'''
+    results = dict()
+    def add(b, m):
+        if b not in results:
+            results[b] = []
+        results[b].append(m)
+
+    cur = git.currentBranch()
+
+    if re.match("^(wip|ready)/",cur) and git.hasChanges():
+        print "uncommitted changes on current branch " + cur
+
+    unmerged = filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged"))
+    for b in unmerged:
+        add(b, "unmerged")
+
+    branches = git.branches()
+
+    wip = filter(lambda x: re.match("^wip/",x), branches)
+    ready = filter(lambda x: re.match("^ready/",x), branches)
+
+    branches = git.branches()
+    for branch in filter(lambda x: "wip/" in x, git.branches()):
+        target = re.sub("^wip/", "ready/", branch)
+        base = git.mergeBase(branch, target)
+        changes = linesFrom("git log --oneline {}..{}".format(base, branch))
+        if len(changes) > 0:
+            add(branch, "{} change(s) not ready".format(len(changes)))
+
+    for k in sorted(results):
+        print "{}: {}".format(k, " ".join(results[k]))
+        
+
+@command
+def unmerged():
+    ''' Show all feature branches that have not yet been merged to the current branch'''
+    print "\n".join(filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged")))
+
+@command
+def merged():
+    ''' Show all feature branches that a READY and *have* been merged '''
+    print "\n".join(filter(lambda x: "ready/" in x, linesFrom("git branch --merged")))
+
+@command
+def wip():
+    '''show work in progress branches that have not yet been merged to ready'''
+    branches = git.branches()
+    for branch in filter(lambda x: "wip/" in x, git.branches()):
+        target = re.sub("^wip/", "ready/", branch)
+        if target in branches and git.hasChanges(branch, target):
+            print branch
+
+
+######################################################################
+# and main...
+
+def runcommand(args):
+    ''' Run the UI command with appropriate arguments by introspection'''
+    func = args.func
+    info = inspect.getargspec(func)
+    d = dict()
+    for a in info.args:
+        d[a]=args.__dict__[a]
+
+    func(**d)
+
+def main():
+    parser = argparse.ArgumentParser(description="Implement git feature branches")
+
+    subparser  = parser.add_subparsers()
+
+    # Dynamically add arguments for commands
+    for f in Commands:
+        subp = subparser.add_parser(f.__name__, help=f.__doc__)
+        subp.set_defaults(func=f)
+        info = inspect.getargspec(f)
+        for a in info.args:
+            subp.add_argument(a)
+
+    args = parser.parse_args()
+
+    runcommand(args)
+
+
+if __name__ == "__main__":
+    main()
