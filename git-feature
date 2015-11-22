@@ -187,6 +187,15 @@ def start(name):
         git.checkout("-b", target, branch)
 
 @command
+def rebase():
+    '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
+    current = git.currentBranch()
+    with stashed():
+        target = re.sub("^wip/", "ready/", current)
+        base = git.mergeBase(current, target)
+        git.rebase("-i", base)
+
+@command
 def ready():
     '''Merge changes from the current WIP feature branch to a READY feature branch'''
     branch = git.currentBranch()

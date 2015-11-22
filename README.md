@@ -5,14 +5,16 @@ Another git feature branch manager
 ## commands
 
     usage: git-feature [-h]
-                       {start,ready,merge,publish,push,list,done,status,pending,info,unmerged,merged,wip}
+                       {start,rebase,ready,merge,publish,push,list,done,status,pending,info,unmerged,merged,wip}
                        ...
     
     Implement git feature branches
     
     positional arguments:
-      {start,ready,merge,publish,push,list,done,status,pending,info,unmerged,merged,wip}
+      {start,rebase,ready,merge,publish,push,list,done,status,pending,info,unmerged,merged,wip}
         start               Start a feature called NAME
+        rebase              Rebase the current WIP changes so that they do not
+                            interfere with publishing ready changes
         ready               Merge changes from the current WIP feature branch to a
                             READY feature branch
         merge               Merge the ready commits of the current feature to the
@@ -36,7 +38,6 @@ Another git feature branch manager
     
     optional arguments:
       -h, --help            show this help message and exit
-
 
 ## Bugs
 
