@@ -26,6 +26,8 @@ def error(message):
     print message
     sys.exit(1)
 
+
+
 ######################################################################
 # Process utilities
 
@@ -54,6 +56,9 @@ def linesFrom(cmd):
     lines = []
     with Pipe(cmd) as p:
         return map(lambda x: x.rstrip(), p.readlines())
+
+def cutlines(col,cmd):
+    return map(lambda x: x[col:], linesFrom(cmd))
 
 def oneline(cmd):
     with Pipe(cmd) as p:
@@ -145,6 +150,20 @@ class stashed(object):
             run("git stash pop")
 
 
+class Checkout(object):
+    def __init__(self, branch):
+        self.saved = None
+        self.branch = branch
+
+    def __enter__(self):
+        self.saved = git.currentBranch()
+        git.checkout(self.branch)
+
+    def __exit__(self, type, value, tb):
+        if type is not None:
+            git.merge("--abort")
+        git.checkout(self.saved)
+
 ######################################################################
 # git feature commands
 
@@ -152,7 +171,7 @@ class stashed(object):
 @command
 def start(name):
     '''Start a feature called NAME'''
-    branch=git.config("feature.branch", "master")
+    branch=git.config("feature.target", "master")
 
     target = "wip/{}".format(name)
 
@@ -168,6 +187,36 @@ def start(name):
         git.checkout("-b", target, branch)
 
 @command
+def rebase():
+    '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
+    current = git.currentBranch()
+    with stashed():
+        target = re.sub("^wip/", "ready/", current)
+        base = git.mergeBase(current, target)
+        git.rebase("-i", base)
+
+@command
+def log():
+    '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
+    current = git.currentBranch()
+    ready= re.sub("^wip/", "ready/", current)
+    wip = re.sub("ready/", "^wip/", current)
+    rchanges = git.changes(ready, git.config("feature.target", "master"))
+    wchanges = git.changes(wip, ready)
+
+    if len(rchanges) > 0:
+        print "Ready:"
+        print "  * " + "\n  * ".join(rchanges)
+
+    if len(wchanges) > 0:
+        print "In progress:"
+        print "  * " + "\n  * ".join(wchanges)
+
+    if len(wchanges) == 0 and len (rchanges) == 0:
+        print "no pending changes"
+
+
+@command
 def ready():
     '''Merge changes from the current WIP feature branch to a READY feature branch'''
     branch = git.currentBranch()
@@ -177,11 +226,24 @@ def ready():
 
     if target in bs:
         with stashed():
-            git.checkout(target)
-            git.merge(branch)
-            git.checkout(branch)
+            with Checkout(target):
+                git.merge(branch)
     else:
         git.branch(target, branch)
+
+@command
+def merge(name):
+    '''Merge the ready commits of the current feature to the integration branch'''
+    master = git.config("feature.target", "master")
+    if re.match("wip/", name):
+        name = re.sup("^wip/", "ready/", name)
+    elif not re.match("ready/^", name):
+        name = "ready/" + name
+
+    with stashed():
+        with Checkout(master):
+            git.merge("--no-ff", name)
+            
 
 @command
 def publish():
@@ -217,31 +279,87 @@ def list():
 
 @command
 def done():
-    '''Check out the 'master' branch (or feature.branch branch)'''
-    branch=git.config("feature.branch", "master")
+    '''Check out the 'master' branch (or feature.target branch)'''
+    branch=git.config("feature.target", "master")
 
     git.checkout(branch)
-    
+
 @command
-def pending():
+def status():
+    '''show status of all features'''
     ''' Show all feature branches that might require work'''
-    masterbranch =git.config("feature.branch", "master")
+    masterbranch =git.config("feature.target", "master")
     mastercommit = git.commitFor(masterbranch)
 
     results = dict()
-    def add(b, m):
+    def add(b, msg):
+        m = re.match("^(wip|ready)/(.*)", b)
+        b = m.group(2)
         if b not in results:
             results[b] = []
-        results[b].append(m)
+        results[b].append(msg)
 
     cur = git.currentBranch()
 
     if re.match("^(wip|ready)/",cur) and git.hasChanges():
-        print "uncommitted changes on current branch " + cur
+        add(cur, "uncommitted changes")
 
     unmerged = filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged"))
     for b in unmerged:
-        add(b, "unmerged")
+        add(b, "not in current branch")
+
+    branches = git.branches()
+
+    wip = filter(lambda x: re.match("^wip/",x), branches)
+    ready = filter(lambda x: re.match("^ready/",x), branches)
+
+    branches = git.branches()
+    for branch in wip:
+        target = re.sub("^wip/", "ready/", branch)
+        if target in branches:
+            changes = git.changes(branch, target)
+            if len(changes) > 0:
+                add(branch, "{} change(s) in progress".format(len(changes)))
+        else:
+            changes=git.changes(branch, masterbranch)
+            if len(changes) > 0:
+                add(branch, "no ready branch. {} change(s) in progress".format(len(changes)))
+            else:
+                add(branch, "not started")
+
+    for branch in ready:
+        changes = git.changes(branch, masterbranch)
+        if changes:
+            add(branch, "{} change(s) ready to merge to {}".format(len(changes), masterbranch))
+        else:
+            add(branch, "ready changes integrated")
+
+
+    for k in sorted(results):
+        print "{}: {}".format(k, ", ".join(results[k]))
+    
+@command
+def pending():
+    ''' Show all feature branches that might require work'''
+    masterbranch =git.config("feature.target", "master")
+    mastercommit = git.commitFor(masterbranch)
+
+    results = dict()
+    def add(b, msg):
+        m = re.match("^(wip|ready)/(.*)", b)
+        b = m.group(2)
+        if b not in results:
+            results[b] = []
+        results[b].append(msg)
+
+    cur = git.currentBranch()
+
+    if re.match("^(wip|ready)/",cur) and git.hasChanges():
+        add(cur, "uncommitted changes")
+
+    unmerged = filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged"))
+    for b in unmerged:
+        add(b, "not in current branch")
 
     branches = git.branches()
 
@@ -263,27 +381,27 @@ def pending():
     for branch in ready:
         changes = git.changes(branch, masterbranch)
         if changes:
-            add(branch, "{} change(s) pending merge to {}".format(len(changes), masterbranch))
+            add(branch, "{} change(s) ready to merge to {}".format(len(changes), masterbranch))
 
 
     for k in sorted(results):
-        print "{}: {}".format(k, " ".join(results[k]))
+        print "{}: {}".format(k, ", ".join(results[k]))
         
 @command
 def info():
-    print "integration branch is {}".format(git.config("feature.branch", "origin"))
+    print "integration branch is {}".format(git.config("feature.target", "master"))
     print "publish ready features to {}".format(git.config("feature.origin", "origin"))
     print "push work in progress to {}".format(git.config("feature.fork", "mine"))
 
 @command
 def unmerged():
     ''' Show all feature branches that have not yet been merged to the current branch'''
-    print "\n".join(filter(lambda x: "ready/" in x, linesFrom("git branch --no-merged")))
+    print "\n".join(filter(lambda x: "ready/" in x, cutlines(2, "git branch --no-merged")))
 
 @command
 def merged():
     ''' Show all feature branches that a READY and *have* been merged '''
-    print "\n".join(filter(lambda x: "ready/" in x, linesFrom("git branch --merged")))
+    print "\n".join(filter(lambda x: "ready/" in x, cutlines(2, "git branch --merged")))
 
 @command
 def wip():
