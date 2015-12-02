@@ -55,7 +55,7 @@ def run(command):
 def linesFrom(cmd):
     lines = []
     with Pipe(cmd) as p:
-        return map(lambda x: x.rstrip(), p.readlines())
+        return map(lambda x: x.strip(), p.readlines())
 
 def cutlines(col,cmd):
     return map(lambda x: x[col:], linesFrom(cmd))
@@ -294,6 +294,8 @@ def status():
     results = dict()
     def add(b, msg):
         m = re.match("^(wip|ready)/(.*)", b)
+	if m is None:
+	   raise Exception("Can't find branch in '{}'".format(b))
         b = m.group(2)
         if b not in results:
             results[b] = []
