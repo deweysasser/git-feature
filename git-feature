@@ -10,6 +10,7 @@ import subprocess
 import re
 import inspect
 import sys
+import functools
 
 ######################################################################
 # Metaprogramming
@@ -19,6 +20,16 @@ def command(func):
     Commands.append(func)
     return func
 
+
+def cache(obj):
+    cache = obj.cache = {}
+
+    @functools.wraps(obj)
+    def memoizer(*args, **kwargs):
+        if args not in cache:
+            cache[args] = obj(*args, **kwargs)
+        return cache[args]
+    return memoizer
 
 ######################################################################
 # Utilities
@@ -112,15 +123,19 @@ class Git(object):
     def currentBranch(self):
         return re.sub("^refs/heads/", "", oneline("git symbolic-ref HEAD"))
 
+    @cache
     def commitFor(self, branch):
         return oneline("git rev-parse {}".format(branch))
 
+    @cache
     def mergeBase(self, b1, b2):
         return oneline("git merge-base {} {}".format(b1, b2))
     
+    @cache
     def branches(self, *args):
         return map(lambda x: re.sub("^\* ", "", x), linesFrom("git branch " + " ".join(args)))
 
+    @cache
     def changes(self, b1, b2):
         base = self.mergeBase(b1, b2)
         if base == self.commitFor(b1):
@@ -130,6 +145,7 @@ class Git(object):
     def remotes(self):
         return linesFrom("git remote")
 
+    @cache
     def hasChanges(self, *args):
         if subprocess.call(("git diff --quiet " + " ".join(args)).split()) == 0:
             return False
@@ -141,7 +157,7 @@ class Git(object):
         with Pipe("git ls-files --exclude-standard -m") as p:
             return map(lambda x: x.rsplit(), p.readlines())
 
-
+    @cache
     def config(self, key, default=None):
         if self.Config is None:
             self.Config =dict()
@@ -212,9 +228,11 @@ class Feature(object):
         if self.name is None:
             self.name = string
 
+    @cache
     def wip(self):
         return GitBranch("wip/{}".format(self.name))
 
+    @cache
     def ready(self):
         return GitBranch("ready/{}".format(self.name))
 
