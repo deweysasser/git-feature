@@ -66,7 +66,7 @@ def run(command):
     if Verbose:
         print command
     if subprocess.call(command.split()) > 0:
-        raise Exception("Error running git branch")
+        raise Exception("Error running {}".format(command))
 
 
 ######################################################################
@@ -128,6 +128,9 @@ class Git(object):
         def command(*args):
             run("git {} {}".format(cmd, " ".join(map(str,args))))
         return command
+
+    def withCheckout(self, branch, quiet=False):
+        return Checkout(branch, quiet)
 
     def currentBranch(self):
         return re.sub("^refs/heads/", "", oneline("git symbolic-ref HEAD"))
@@ -332,13 +335,16 @@ def log():
 
 
 @command
-def ready():
+def ready(name=None, commit=None):
     '''Merge changes from the current WIP feature branch to a READY feature branch'''
-    f = Feature()
+    f = Feature(name)
     bs = git.branches()
 
     target = f.ready()
-    branch = f.wip()
+    if commit is None:
+        branch = f.wip()
+    else:
+        branch = commit
 
     if str(target) in bs:
         with stashed():
@@ -348,42 +354,52 @@ def ready():
         git.branch(target, branch)
 
 @command
-def merge(name=None, all=False):
+def merge(all=False, *names):
     '''Merge the ready commits of the current feature to the integration branch'''
     master = git.config("feature.target", "master")
-    if re.match("wip/", name):
-        name = re.sup("^wip/", "ready/", name)
-    elif not re.match("ready/^", name):
-        name = "ready/" + name
-
     with stashed():
         with Checkout(master):
-            git.merge("--no-ff", name)
-            
+            if all:
+                f = uniq([x.ready() for x in features("--no-merged") if x.ready().exists()])
+            elif not names is None:
+                f = [Feature(x).ready() for x in names if x.ready().exists()]
+            else:
+                f = [Feature()]
+            git.merge("--no-ff", *names)
 
 @command
-def publish():
+def publish(all=False, *names):
     '''Push the READY feature branch to the 'origin' remote (or the feature.origin config setting)'''
-    branch = git.currentBranch()
 
     remote = git.config("feature.origin", "origin")
-    target = re.sub("^wip/", "ready/", branch)
+
+    if all:
+        fs = [x.ready() for x in features() if x.ready().exists()]
+    elif not names is None:
+        fs = [Feature(x).ready() for x in names if Feature(x).ready().exits()]
+    else:
+        fs = [Feature().ready()]
 
     if remote in git.remotes():
-        git.push(remote, target)
+        git.push(remote, *fs)
     else:
         error("feature.origin not set to valid remote and remote 'origin' not found")
 
 @command
-def push(name=None):
+def push(all=False, *names):
     '''Push the WIP feature branch to the 'mine' remote (or the feature.fork config setting)'''
     branch = git.currentBranch()
-
     remote = git.config("feature.fork", "mine")
-    target = Feature(name).wip()
+
+    if all:
+        f = [x.wip() for x in features() if x.wip().exists()]
+    elif not names is None:
+        f = [Feature(x).wip() for x in names if Feature(x).wip().exits()]
+    else:
+        f = [Feature().wip()]
 
     if remote in git.remotes():
-        git.push("-f", remote, target)
+        git.push("-f", remote, *f)
     else:
         error("feature.fork not set to valid remote and remote 'mine' not found")
 
@@ -393,14 +409,22 @@ def list():
     print "\n".join(map(str, features()))
 
 @command
-def done():
+def finish(*names):
     '''Check out the 'master' branch (or feature.target branch)'''
     branch=git.config("feature.target", "master")
 
-    f = Feature()
-    ready()
+    print "Using {}".format(names)
+
+    if not names is None:
+        fs = [Feature(x) for x in names]
+    else:
+        fs = [Feature()]
+
     git.checkout(branch)
-    f.wip().delete()
+
+    for f in fs:
+        ready(str(f))
+        f.wip().delete()
 
 @command
 def status():
@@ -537,7 +561,11 @@ def runcommand(args):
     for a in info.args:
         d[a]=args.__dict__[a]
 
-    func(**d)
+    fargs=[]
+    if not info.varargs is None:
+        fargs = args.__dict__[info.varargs]
+    
+    func(*fargs, **d)
 
 # A bit of an ugly hack
 Verbose=True
@@ -554,6 +582,7 @@ def main():
         subp = subparser.add_parser(f.__name__, help=f.__doc__)
         subp.set_defaults(func=f)
         args, varargs, keywords, defaults = inspect.getargspec(f)
+#        print "{}({}): {} {} {} {}".format(f.__name__, ", ".join(args), args, varargs, keywords, defaults)
         for i, a in enumerate(args):
             di = i + len(defaults)- len(args)
             if not defaults is None and di >-1:
@@ -564,6 +593,8 @@ def main():
                     subp.add_argument("-" + a, default=defaultValue)
             else:
                 subp.add_argument(a)
+        if not varargs is None:
+            subp.add_argument(varargs, nargs="*")
 
     args = parser.parse_args()
 
