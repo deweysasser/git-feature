@@ -280,7 +280,9 @@ def features(*args):
 def start(name, base=False):
     '''Start a feature called NAME'''
 
-    target = Feature(name).wip()
+    f = Feature(name)
+    target = f.wip()
+    ready = f.ready()
     integration = git.config("feature.target", "master")
 
     if git.currentBranch() == str(target):
@@ -288,6 +290,9 @@ def start(name, base=False):
         return
 
     if target.exists():
+        target.checkout()
+    elif ready.exists():
+        target.create(ready)
         target.checkout()
     else:
         if base:
