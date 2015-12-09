@@ -307,20 +307,35 @@ def start(name, base=False):
 @command
 def rebase():
     '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
-    current = git.currentBranch()
+    master = git.config("feature.target", "master")
+    f = Feature()
+    if f.ready().exists():
+        base = git.commitFor(f.ready())
+    else:
+        base = git.mergeBase(f.wip(), master)
+
     with stashed():
-        target = re.sub("^wip/", "ready/", current)
-        base = git.mergeBase(current, target)
         git.rebase("-i", base)
 
 @command
 def log():
-    '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
-    current = git.currentBranch()
-    ready= re.sub("^wip/", "ready/", current)
-    wip = re.sub("ready/", "^wip/", current)
-    rchanges = git.changes(ready, git.config("feature.target", "master"))
-    wchanges = git.changes(wip, ready)
+    '''Show the changes on a feature'''
+    master = git.config("feature.target", "master")
+
+    current = Feature()
+    wip = current.wip()
+    ready= current.ready()
+
+    rchanges = []
+    if ready.exists():
+        rchanges = ready.changes(master)
+        base = ready
+    else:
+        base = master
+
+    wchanges = []
+    if wip.exists():
+        wchanges = wip.changes(base)
 
     if len(rchanges) > 0:
         print "Ready:"
@@ -412,8 +427,6 @@ def list():
 def finish(*names):
     '''Check out the 'master' branch (or feature.target branch)'''
     branch=git.config("feature.target", "master")
-
-    print "Using {}".format(names)
 
     if not names is None:
         fs = [Feature(x) for x in names]
