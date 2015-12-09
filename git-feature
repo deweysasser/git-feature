@@ -86,8 +86,14 @@ class GitBranch(object):
     def checkout(self, *args):
         return git.checkout(self.name, *args)
 
+    def delete(self):
+        return git.branch("-D", self.name)
+
     def create(self, base=None):
-        git.branch(base)
+        if base:
+            git.branch(self.name, base)
+        else:
+            git.branch(self.name)
 
     def __str__(self):
         return self.name
@@ -112,8 +118,8 @@ class Git(object):
     def mergeBase(self, b1, b2):
         return oneline("git merge-base {} {}".format(b1, b2))
     
-    def branches(self):
-        return linesFrom("git branch")
+    def branches(self, *args):
+        return map(lambda x: re.sub("^\* ", "", x), linesFrom("git branch " + " ".join(args)))
 
     def changes(self, b1, b2):
         base = self.mergeBase(b1, b2)
@@ -224,12 +230,12 @@ def uniq(list):
 
     return [x for x in list if not seen(x)]
 
-def features():
+def features(*args):
     return map(Feature,
-               uniq(map(lambda x: re.sub("^(wip|ready)/", "", x), 
-                   filter(lambda x: re.match("^(wip|ready)/", x),
-                               git.branches()))))
-                      
+               uniq(map(lambda x: re.sub("^(\* )?(wip|ready)/", "", x), 
+                   filter(lambda x: re.match("^(\* )?(wip|ready)/", x),
+                               git.branches(*args)))))
+
             
 
 
@@ -238,10 +244,11 @@ def features():
 
 
 @command
-def start(name):
+def start(name, base=False):
     '''Start a feature called NAME'''
 
     target = Feature(name).wip()
+    integration = git.config("feature.target", "master")
 
     if git.currentBranch() == str(target):
         print "Already on {}".format(target)
@@ -250,7 +257,10 @@ def start(name):
     if target.exists():
         target.checkout()
     else:
-        target.create()
+        if base:
+            target.create(integration)
+        else:
+            target.create()
         target.checkout()
 
 @command
@@ -299,7 +309,7 @@ def ready():
         git.branch(target, branch)
 
 @command
-def merge(name):
+def merge(name=None, all=False):
     '''Merge the ready commits of the current feature to the integration branch'''
     master = git.config("feature.target", "master")
     if re.match("wip/", name):
@@ -348,7 +358,10 @@ def done():
     '''Check out the 'master' branch (or feature.target branch)'''
     branch=git.config("feature.target", "master")
 
+    f = Feature()
+    ready()
     git.checkout(branch)
+    f.wip().delete()
 
 @command
 def status():
@@ -485,9 +498,17 @@ def main():
     for f in Commands:
         subp = subparser.add_parser(f.__name__, help=f.__doc__)
         subp.set_defaults(func=f)
-        info = inspect.getargspec(f)
-        for a in info.args:
-            subp.add_argument(a)
+        args, varargs, keywords, defaults = inspect.getargspec(f)
+        for i, a in enumerate(args):
+            di = i + len(defaults)- len(args)
+            if not defaults is None and di >-1:
+                defaultValue = defaults[di]
+                if defaultValue is True or defaultValue is False:
+                    subp.add_argument("-" + a, default=defaultValue, action='store_const', const=True)
+                else:
+                    subp.add_argument("-" + a, default=defaultValue)
+            else:
+                subp.add_argument(a)
 
     args = parser.parse_args()
 
