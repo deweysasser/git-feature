@@ -20,6 +20,14 @@ def command(func):
     Commands.append(func)
     return func
 
+def quiet(func):
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        global Verbose
+        Verbose=False
+        return func(*args, **kwargs)
+    return wrapped
+
 
 def cache(obj):
     cache = obj.cache = {}
@@ -55,7 +63,8 @@ class Pipe(object):
             raise Exception("Error running command {}".format(self.command))
 
 def run(command):
-    print command
+    if Verbose:
+        print command
     if subprocess.call(command.split()) > 0:
         raise Exception("Error running git branch")
 
@@ -117,7 +126,7 @@ class Git(object):
     def __getattr__(self, cmd):
         ''' Default functions are "just run the equivalent GIT command"'''
         def command(*args):
-            run("git {} {}".format(cmd, " ".join(args)))
+            run("git {} {}".format(cmd, " ".join(map(str,args))))
         return command
 
     def currentBranch(self):
@@ -201,18 +210,24 @@ class stashed(object):
 
 
 class Checkout(object):
-    def __init__(self, branch):
+    def __init__(self, branch, quiet=False):
         self.saved = None
         self.branch = branch
+        if quiet:
+            self.quiet="-q"
+        else:
+            self.quiet = ""
+
+        self.saved = git.currentBranch()
+        git.checkout(self.quiet, self.branch)
 
     def __enter__(self):
-        self.saved = git.currentBranch()
-        git.checkout(self.branch)
+        pass
 
     def __exit__(self, type, value, tb):
         if type is not None:
             git.merge("--abort")
-        git.checkout(self.saved)
+        git.checkout(self.quiet, self.saved)
 
 ######################################################################
 # git feature objects
@@ -318,6 +333,7 @@ def ready():
     bs = git.branches()
 
     target = f.ready()
+    branch = f.wip()
 
     if str(target) in bs:
         with stashed():
@@ -354,12 +370,12 @@ def publish():
         error("feature.origin not set to valid remote and remote 'origin' not found")
 
 @command
-def push():
+def push(name=None):
     '''Push the WIP feature branch to the 'mine' remote (or the feature.fork config setting)'''
     branch = git.currentBranch()
 
     remote = git.config("feature.fork", "mine")
-    target = re.sub("^ready/", "wip/", branch)
+    target = Feature(name).wip()
 
     if remote in git.remotes():
         git.push("-f", remote, target)
@@ -473,14 +489,25 @@ def info():
     print "push work in progress to {}".format(git.config("feature.fork", "mine"))
 
 @command
+@quiet
 def unmerged():
     ''' Show all feature branches that have not yet been merged to the current branch'''
-    print "\n".join(filter(lambda x: "ready/" in x, cutlines(2, "git branch --no-merged")))
+    integration = git.config("feature.target", "master")
+
+    with Checkout(integration, quiet=True):
+        print "\n".join(str(x.ready()) for x in features("--no-merged") if x.ready().exists())
 
 @command
+@quiet
 def merged():
     ''' Show all feature branches that a READY and *have* been merged '''
-    print "\n".join(filter(lambda x: "ready/" in x, cutlines(2, "git branch --merged")))
+
+    ''' Show all feature branches that have not yet been merged to the current branch'''
+    integration = git.config("feature.target", "master")
+
+    with Checkout(integration, quiet=True):
+        print "\n".join(str(x.ready()) for x in features("--merged") if x.ready().exists())
+
 
 @command
 def wip():
@@ -507,12 +534,17 @@ def runcommand(args):
 
     func(**d)
 
+# A bit of an ugly hack
+Verbose=True
+
 def main():
     parser = argparse.ArgumentParser(description="Implement git feature branches")
 
     subparser  = parser.add_subparsers()
 
     # Dynamically add arguments for commands
+
+    # TODO:  interpret a varargs as "all the rest of the arguments".  E.g. see push --name
     for f in Commands:
         subp = subparser.add_parser(f.__name__, help=f.__doc__)
         subp.set_defaults(func=f)
