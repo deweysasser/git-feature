@@ -71,6 +71,9 @@ class GitBranch(object):
     def exists(self):
         return self.name in git.branches()
 
+    def hasChanges(self, other):
+        return len(self.changes(other)) > 0
+
     def changes(self, other):
         return git.changes(self.name, str(other))
 
@@ -79,6 +82,12 @@ class GitBranch(object):
 
     def base(self, other):
         return git.mergeBase(self.name, other)
+
+    def checkout(self, *args):
+        return git.checkout(self.name, *args)
+
+    def create(self, base=None):
+        git.branch(base)
 
     def __str__(self):
         return self.name
@@ -89,6 +98,7 @@ class Git(object):
         pass
 
     def __getattr__(self, cmd):
+        ''' Default functions are "just run the equivalent GIT command"'''
         def command(*args):
             run("git {} {}".format(cmd, " ".join(args)))
         return command
@@ -188,6 +198,9 @@ class Checkout(object):
 class Feature(object):
     def __init__(self, string=None):
         if string is None: string = git.currentBranch()
+
+        if not re.match("^(wip|ready|bugfix|feature)/",string):
+            raise Exception("Branch {} is not a feature branch".format(string))
             
         self.name = re.sub("^(wip|ready)/", "", string)
         if self.name is None:
@@ -227,18 +240,18 @@ def features():
 @command
 def start(name):
     '''Start a feature called NAME'''
-    branch=git.config("feature.target", "master")
 
-    target = "wip/{}".format(name)
+    target = Feature(name).wip()
 
-    if git.currentBranch() == target:
+    if git.currentBranch() == str(target):
         print "Already on {}".format(target)
         return
 
-    if target in git.branches():
-        git.checkout(target)
+    if target.exists():
+        target.checkout()
     else:
-        git.checkout("-b", target, branch)
+        target.create()
+        target.checkout()
 
 @command
 def rebase():
@@ -273,12 +286,12 @@ def log():
 @command
 def ready():
     '''Merge changes from the current WIP feature branch to a READY feature branch'''
-    branch = git.currentBranch()
+    f = Feature()
     bs = git.branches()
 
-    target = re.sub("^wip/", "ready/", branch)
+    target = f.ready()
 
-    if target in bs:
+    if str(target) in bs:
         with stashed():
             with Checkout(target):
                 git.merge(branch)
@@ -441,11 +454,13 @@ def merged():
 @command
 def wip():
     '''show work in progress branches that have not yet been merged to ready'''
-    branches = git.branches()
-    for branch in filter(lambda x: "wip/" in x, git.branches()):
-        target = re.sub("^wip/", "ready/", branch)
-        if target in branches and git.hasChanges(branch, target):
-            print branch
+    for f in features():
+        if f.wip().exists():
+            if f.ready().exists():
+                if f.wip().hasChanges(f.ready()):
+                    print f
+            else:
+                print f
 
 
 ######################################################################
