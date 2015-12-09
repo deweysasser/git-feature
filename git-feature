@@ -240,7 +240,7 @@ class Feature(object):
         if string is None: string = git.currentBranch()
 
         if not re.match("^(wip|ready|bugfix|feature)/",string):
-            raise Exception("Branch {} is not a feature branch".format(string))
+            raise Exception("Branch '{}' is not a feature branch".format(string))
             
         self.name = re.sub("^(wip|ready)/", "", string)
         if self.name is None:
@@ -264,13 +264,13 @@ def uniq(list):
         d[x] = True
         return r
 
-    return [x for x in list if not seen(x)]
+    return [x for x in list if not seen(str(x))]
 
 def features(*args):
-    return map(Feature,
-               uniq(map(lambda x: re.sub("^(\* )?(wip|ready)/", "", x), 
-                   filter(lambda x: re.match("^(\* )?(wip|ready)/", x),
-                               git.branches(*args)))))
+    b = git.branches(*args)
+    filtered = filter(lambda x: re.match("^(\* )?(wip|ready)/", x), b)
+
+    return uniq(map(Feature,filtered))
 
             
 
