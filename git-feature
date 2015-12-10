@@ -11,6 +11,7 @@ import re
 import inspect
 import sys
 import functools
+import os
 
 ######################################################################
 # Metaprogramming
@@ -129,6 +130,9 @@ class Git(object):
             run("git {} {}".format(cmd, " ".join(map(str,args))))
         return command
 
+    def toplevel(self):
+        return oneline("git rev-parse --show-toplevel")
+
     def withCheckout(self, branch, quiet=False):
         return Checkout(branch, quiet)
 
@@ -222,25 +226,36 @@ class Checkout(object):
             self.quiet = ""
 
         self.saved = git.currentBranch()
-        git.checkout(self.quiet, self.branch)
+        if self.saved != self.branch:
+            git.checkout(self.quiet, self.branch)
 
     def __enter__(self):
         pass
 
     def __exit__(self, type, value, tb):
         if type is not None:
-            git.merge("--abort")
-        git.checkout(self.quiet, self.saved)
+            path = git.toplevel() + "/.git/MERGE_HEAD"
+            try:
+                if os.path.exists(path):
+                    git.merge("--abort")
+            except:
+                pass
+        if self.saved != self.branch:
+            git.checkout(self.quiet, self.saved)
 
 ######################################################################
 # git feature objects
+
+class NotAFeatureBranch(Exception):
+    def __init__(self, *args):
+        super(NotAFeatureBranch, self).__init__(*args)
 
 class Feature(object):
     def __init__(self, string=None):
         if string is None: string = git.currentBranch()
 
         if not re.match("^(wip|ready|bugfix|feature)/",string):
-            raise Exception("Branch '{}' is not a feature branch".format(string))
+            raise NotAFeatureBranch("Branch '{}' is not a feature branch".format(string))
             
         self.name = re.sub("^(wip|ready)/", "", string)
         if self.name is None:
@@ -278,6 +293,9 @@ def features(*args):
 ######################################################################
 # git feature commands
 
+@command
+def checkout(name, base=False):
+    return start(name, base)
 
 @command
 def start(name, base=False):
@@ -304,6 +322,7 @@ def start(name, base=False):
             target.create()
         target.checkout()
 
+# todo:  need to separate the concepts of "rebase a feature" and "rebase -i a feature".  Maybe add the argument?
 @command
 def rebase():
     '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
@@ -369,18 +388,26 @@ def ready(name=None, commit=None):
         git.branch(target, branch)
 
 @command
-def merge(all=False, *names):
+def merge(all=False, rebase=False, *names):
     '''Merge the ready commits of the current feature to the integration branch'''
     master = git.config("feature.target", "master")
+    branch = git.currentBranch()
     with stashed():
         with Checkout(master):
             if all:
-                f = uniq([x.ready() for x in features("--no-merged") if x.ready().exists()])
-            elif not names is None:
-                f = [Feature(x).ready() for x in names if x.ready().exists()]
+                fs = uniq([x for x in features("--no-merged") if x.ready().exists()])
+            elif not names is None and not names == ():
+                fs = [Feature(x) for x in names if x.ready().exists()]
             else:
-                f = [Feature()]
-            git.merge("--no-ff", *names)
+                fs = [Feature(branch)]
+            if rebase:
+                for f in fs:
+                    # TODO:  do this by creating a temp branch and not messing with 'ready'.  Not sure if we event want to do this here
+                    with Checkout(f.ready()):
+                        git.rebase(master)
+                    git.merge("--no-ff", f.ready())
+            else:
+                git.merge("--no-ff", *map(lambda x: x.ready(), fs))
 
 @command
 def publish(all=False, *names):
@@ -611,7 +638,10 @@ def main():
 
     args = parser.parse_args()
 
-    runcommand(args)
+    try:
+        runcommand(args)
+    except NotAFeatureBranch as e:
+        print "Current branch not a feature branch"
 
 
 if __name__ == "__main__":
