@@ -248,11 +248,16 @@ def ready():
         git.branch(target, branch)
 
 @command
-def merge(name):
+def merge(name=None):
     '''Merge the ready commits of the current feature to the integration branch'''
+
+    if name is None:
+        name = git.currentBranch()
+
     master = git.config("feature.target", "master")
+
     if re.match("wip/", name):
-        name = re.sup("^wip/", "ready/", name)
+        name = re.sub("^wip/", "ready/", name)
     elif not re.match("ready/^", name):
         name = "ready/" + name
 
