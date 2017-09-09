@@ -135,6 +135,7 @@ git=Git()
 # Advanced git operations
 
 class stashed(object):
+    '''A context which stashes all unsaved changes, restoring them after the context completes'''
     def __init__(self):
         pass
 
@@ -151,6 +152,7 @@ class stashed(object):
 
 
 class Checkout(object):
+    '''A context which checks out a branch, restoring the existing branch when the context completes.'''
     def __init__(self, branch):
         self.saved = None
         self.branch = branch
@@ -197,7 +199,7 @@ def rebase():
 
 @command
 def log():
-    '''Rebase the current WIP changes so that they do not interfere with publishing ready changes'''
+    '''Show changes from master'''
     current = git.currentBranch()
     ready= re.sub("^wip/", "ready/", current)
     wip = re.sub("ready/", "^wip/", current)
