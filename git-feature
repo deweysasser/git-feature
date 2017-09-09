@@ -171,11 +171,19 @@ class Checkout(object):
 
 
 @command
-def start(name):
+def start(name, base=None, bugfix=False):
     '''Start a feature called NAME'''
-    branch=git.config("feature.target", "master")
+    if base:
+        branch = base
+    else:
+        branch=git.config("feature.target", "master")
 
-    target = "wip/{}".format(name)
+    if bugfix:
+        type = "bugfix"
+    else:
+        type = "feature"
+
+    target = "wip/{}/{}".format(type, name)
 
     if git.currentBranch() == target:
         print "Already on {}".format(target)
