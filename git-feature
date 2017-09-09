@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/bin/env python2.7
 
 # Purpose:  
 # git feature start foo -> git checkout -b wip/foo
