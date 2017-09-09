@@ -438,8 +438,27 @@ def main():
         subp = subparser.add_parser(f.__name__, help=f.__doc__)
         subp.set_defaults(func=f)
         info = inspect.getargspec(f)
-        for a in info.args:
+
+        count_positionals = len(info.args) - (len(info.defaults) if type(info.defaults) != type(None) else 0)
+
+        positionals = info.args[0:count_positionals]
+        optionals = info.args[count_positionals:]
+
+#        print "{} positionals for {} from {} (defaults {}) are {}".format(count_positionals, f.__name__, info.args, info.defaults, positionals)
+
+        for a in positionals:
             subp.add_argument(a)
+
+        def addopt(name, default):
+#            print "Adding argument {}={}".format(name, default)
+            if type(default) == bool:
+                subp.add_argument("--" + name, action='store_true', default=default)
+            else:
+                subp.add_argument("--" + name, default=default)
+
+        # add the optonal arguments
+        if info.defaults:
+            map(addopt, optionals, info.defaults)
 
     args = parser.parse_args()
 
