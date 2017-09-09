@@ -84,8 +84,14 @@ class Git(object):
     def mergeBase(self, b1, b2):
         return oneline("git merge-base {} {}".format(b1, b2))
     
-    def branches(self):
-        return map(lambda x: x[2:], linesFrom("git branch"))
+    def branches(self, all):
+        if all:
+            lines = linesFrom("git for-each-ref refs/heads/ refs/remotes")
+        else:
+            lines = linesFrom("git for-each-ref refs/heads/")
+
+        return map(lambda x: "/".join(x.split('/')[2:]), lines)
+
 
     def changes(self, b1, b2):
         base = self.mergeBase(b1, b2)
@@ -282,9 +288,9 @@ def push():
         error("feature.fork not set to valid remote and remote 'mine' not found")
 
 @command
-def list():
+def list(all=False):
     '''Show all feature branches, WIP or READY'''
-    bs = filter(lambda x: "wip/" in x or "ready/" in x, git.branches())
+    bs = filter(lambda x: "wip/" in x or "ready/" in x, git.branches(all))
     print "\n".join(bs)
 
 @command
