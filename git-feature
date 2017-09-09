@@ -84,7 +84,7 @@ class Git(object):
     def mergeBase(self, b1, b2):
         return oneline("git merge-base {} {}".format(b1, b2))
     
-    def branches(self, all):
+    def branches(self, all=False):
         if all:
             lines = linesFrom("git for-each-ref refs/heads/ refs/remotes")
         else:
